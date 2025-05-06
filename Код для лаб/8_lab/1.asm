@@ -32,7 +32,7 @@ STD_INPUT_HANDLE = -10
     ; Строки вывода
     astr db 'A = ', 0
     bstr db 'B = ', 0
-    ans db '450Ch + A - B = ', 0
+    ans db '450Ch - A + B = ', 0
     maxs db 'Max = ', 0
     newline db 0Ah, 0
     outstr db 'Press any button to exit program...', 0
@@ -73,12 +73,11 @@ Start proc
 
     call InputProc
     cmp R10, 1
-    jz err
-    cmp RBX, 127
-    jg erra
-    cmp RBX, -128
-    jl erra
-    movsx R8, BL ; Сохраняем A как 64-битное число
+    jz err ; Ошибка формата
+    cmp R10, 2
+    jz erra ; Ошибка диапазона
+    mov AL, BL ; Переносим результат в 8-битный регистр
+    movsx R8, AL ; Сохраняем A как 64-битное число
 
     ; Ввод B
     lea RAX, bstr
@@ -87,18 +86,17 @@ Start proc
 
     call InputProc
     cmp R10, 1
-    jz err
-    cmp RBX, 127
-    jg errb
-    cmp RBX, -128
-    jl errb
-    movsx R9, BL ; Сохраняем B как 64-битное число
+    jz err ; Ошибка формата
+    cmp R10, 2
+    jz errb ; Ошибка диапазона
+    mov AL, BL ; Переносим результат в 8-битный регистр
+    movsx R9, AL ; Сохраняем B как 64-битное число
 
-    ; Вычисление F = 450Ch + A - B
+    ; Вычисление F = 450Ch - A + B
     xor RAX, RAX
     mov RAX, 450Ch ; 450Ch = 17676
-    add RAX, R8
-    sub RAX, R9
+    sub RAX, R8
+    add RAX, R9
     mov sum, RAX
 
     ; Нахождение максимума
@@ -208,7 +206,7 @@ InputProc proc uses RAX RCX RDX R8 R9
 
     lea RSI, readStr
     xor RBX, RBX ; Число
-    xor R10, R10 ; Флаг ошибки (0 - нет ошибки)
+    xor R10, R10 ; Флаг ошибки: 0 - нет ошибки, 1 - формат, 2 - диапазон
     xor R11, R11 ; Флаг отрицательного числа
     xor R12, R12 ; Счетчик цифр
 
@@ -241,7 +239,6 @@ process_negative:
     cmp ECX, 0
     jle error ; Только минус
     inc R11 ; Флаг отрицательного числа
-    jmp process_digits
 
 process_digits:
     xor RAX, RAX ; Аккумулятор
@@ -288,12 +285,12 @@ done:
     ret 8 * 2
 
 error_overflow:
-    mov R10, 1
+    mov R10, 2 ; Ошибка диапазона
     STACKFREE
     ret 8 * 2
 
 error:
-    mov R10, 1
+    mov R10, 1 ; Ошибка формата
     STACKFREE
     ret 8 * 2
 
