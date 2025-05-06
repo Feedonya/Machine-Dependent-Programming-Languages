@@ -8,45 +8,44 @@ extern ExitProcess : proc,
 ; Макросы для работы со стеком
 STACKALLOC macro arg
     push R15 ; Выравниваем стек
-    mov R15, RSP ; Возьмем регистр R15, в котором будет храниться указатель на "старый" стек, и занесем значение этого регистра в стек
+    mov R15, RSP ; Возьмем регистр R15, в котором будет храниться указатель на "старый" стек
     sub RSP, 8 * 4 ; Поместим в выбранный регистр значение RSP
     if arg ; Если число аргументов макроса не равно нулю, то освободим место и для них.
         sub RSP, 8 * arg
     endif
-    and SPL, 0F0h ; Выравниваем стек (регистр SPL) по 16-байтовой границе
+    and SPL, 0F0h ; Выравниваем стек по 16-байтовой границе
 endm
 
 STACKFREE macro
     mov RSP, R15 ; Освобождаем выделенную память
     pop R15 ; Занесем в регистр RSP значение, сохраненное в регистре R15
-            ; Извлечем из стека старое значение регистра R15 (pop R15)
 endm
 
 NULL_FIFTH_ARG macro
-    mov qword ptr [RSP + 32], 0 ; Установка пятого аргумента в ноль (предназначен для функций ReadConsoleA, WriteConsoleA)
+    mov qword ptr [RSP + 32], 0 ; Установка пятого аргумента в ноль
 endm
 
-STD_OUTPUT_HANDLE = -11 ; Номер стандартного потока вывода в WinAPI
-STD_INPUT_HANDLE = -10 ; Номер стандартного потока ввода в WinAPI
+STD_OUTPUT_HANDLE = -11
+STD_INPUT_HANDLE = -10
 
 .data
     ; Строки вывода
     astr db 'A = ', 0
     bstr db 'B = ', 0
-    ans db '47 + A - B = ', 0
-    mins db 'Min = ', 0
+    ans db '450Ch + A - B = ', 0
+    maxs db 'Max = ', 0
     newline db 0Ah, 0
     outstr db 'Press any button to exit program...', 0
 
     hStdInput dq 0
     hStdOutput dq 0
     sum dq 0
-    minnumb dq 0
+    maxnumb dq 0
 
     ; Буферы для ввода/вывода
-    readStr db 64 dup(0) ; Буфер для чтения строки
-    bytesRead dd 0 ; Количество прочитанных байтов
-    numberStr db 22 dup(0) ; Буфер для преобразования числа в строку
+    readStr db 64 dup(0)
+    bytesRead dd 0
+    numberStr db 22 dup(0)
 
     ; Ошибки
     formaterror db 'Input format error', 0
@@ -58,7 +57,7 @@ Start proc
     sub RSP, 8 * 4
     and SPL, 0F0h
 
-    ; Получение дескрипторов для потоков ввода/вывода
+    ; Получение дескрипторов
     mov RCX, STD_OUTPUT_HANDLE
     call GetStdHandle
     mov hStdOutput, RAX
@@ -67,51 +66,57 @@ Start proc
     call GetStdHandle
     mov hStdInput, RAX
 
-    ; Вывод строки "A = "
+    ; Ввод A
     lea RAX, astr
     push RAX
     call OutputProc
 
-    ; Ввод числа A
     call InputProc
     cmp R10, 1
     jz err
-    cmp R8, 127
+    cmp RBX, 127
     jg erra
-    cmp R8, -128
+    cmp RBX, -128
     jl erra
+    movsx R8, BL ; Сохраняем A как 64-битное число
 
-    ; Вывод строки "B = "
+    ; Ввод B
     lea RAX, bstr
     push RAX
     call OutputProc
 
-    ; Ввод числа B
     call InputProc
     cmp R10, 1
     jz err
-    mov R9, RAX
-    cmp R9, 127
+    cmp RBX, 127
     jg errb
-    cmp R9, -128
+    cmp RBX, -128
     jl errb
+    movsx R9, BL ; Сохраняем B как 64-битное число
 
-    ; Нахождение минимума
+    ; Вычисление F = 450Ch + A - B
+    xor RAX, RAX
+    mov RAX, 450Ch ; 450Ch = 17676
+    add RAX, R8
+    sub RAX, R9
+    mov sum, RAX
+
+    ; Нахождение максимума
     cmp R8, R9
     jg first
-    mov minnumb, R8
+    mov maxnumb, R9
     jmp continue
 
 first:
-    mov minnumb, R9
+    mov maxnumb, R8
 
 continue:
-    ; Подсчет выражения 47 + A - B
-    add sum, 47
-    add sum, R8
-    sub sum, R9
+    ; Вывод выражения
+    lea RAX, ans
+    push RAX
+    call OutputProc
 
-    ; Вывод результата выражения
+    ; Вывод F
     push sum
     call OutputNum
 
@@ -120,21 +125,16 @@ continue:
     push RAX
     call OutputProc
 
-    ; Вывод строки "Min = "
-    lea RAX, mins
+    ; Вывод "Max = "
+    lea RAX, maxs
     push RAX
     call OutputProc
 
-    ; Вывод значения минимального числа
-    push minnumb
+    ; Вывод максимума
+    push maxnumb
     call OutputNum
 
-    ; Вывод новой строки
-    lea RAX, newline
-    push RAX
-    call OutputProc
-
-    ; Ожидание нажатия клавиши
+    ; Ожидание ввода
     call ExpectInput
 
     jmp final
@@ -182,18 +182,16 @@ OutputProc proc uses RAX RCX RDX R8 R9, string: qword
     call WriteConsoleA
 
     STACKFREE
-
     ret 8
 OutputProc endp
 
-; Процедура ввода числа
 ; Процедура ввода числа
 InputProc proc uses RAX RCX RDX R8 R9
     STACKALLOC 2
 
     ; Читаем строку
     mov RCX, hStdInput
-    lea RDX, readStr ; Загрузка адреса readStr в 64-битный регистр RDX
+    lea RDX, readStr
     mov R8, 64
     lea R9, bytesRead
     NULL_FIFTH_ARG
@@ -202,84 +200,157 @@ InputProc proc uses RAX RCX RDX R8 R9
     ; Обрабатываем строку
     xor RCX, RCX
     mov ECX, bytesRead
+    cmp ECX, 2
+    jl error   ; Строка пустая
     sub ECX, 2 ; Убираем CR/LF
-    mov RBX, 0
+    cmp ECX, 0
+    jle error ; Строка пустая после удаления CR/LF
 
-viewer:
-    dec RCX
-    cmp RCX, -1
-    jz scanningcomplete
+    lea RSI, readStr
+    xor RBX, RBX ; Число
+    xor R10, R10 ; Флаг ошибки (0 - нет ошибки)
+    xor R11, R11 ; Флаг отрицательного числа
+    xor R12, R12 ; Счетчик цифр
 
-    lea RAX, readStr ; Загрузка адреса readStr в 64-битный регистр RAX
-    mov AL, byte ptr [RAX + RCX] ; Доступ через 64-битный регистр
+    ; Проверка первого символа
+    mov AL, [RSI]
     cmp AL, '-'
-    jz stop
-
-eval:
+    jz process_negative
+    cmp AL, '+'
+    jz skip_sign
+    ; Проверка цифры
     cmp AL, '0'
     jl error
     cmp AL, '9'
     jg error
-
     sub AL, '0'
+    mov RBX, RAX
+    inc R12
+    inc RSI
+    dec ECX
+    jmp process_digits
+
+skip_sign:
+    inc RSI
+    dec ECX
+    jmp process_digits
+
+process_negative:
+    inc RSI
+    dec ECX
+    cmp ECX, 0
+    jle error ; Только минус
+    inc R11 ; Флаг отрицательного числа
+    jmp process_digits
+
+process_digits:
+    xor RAX, RAX ; Аккумулятор
+process_digit:
+    cmp ECX, 0
+    jle done_processing ; Выход, если символы закончились
+    mov AL, [RSI]
+    cmp AL, '0'
+    jl error
+    cmp AL, '9'
+    jg error
+    inc R12 ; Счётчик цифр
+    sub AL, '0'
+    ; Преобразование строки в число
     imul RBX, RBX, 10
+    jo error_overflow
     add RBX, RAX
-    jmp viewer
+    jo error_overflow
+    inc RSI
+    dec ECX
+    jmp process_digit
+
+done_processing:
+    cmp R12, 0
+    je error ; Нет цифр
+
+    ; Проверка диапазона
+    cmp R11, 0
+    jnz check_negative
+    cmp RBX, 127
+    jg error_overflow
+    jmp done
+
+check_negative:
+    cmp RBX, 128
+    jg error_overflow
+    neg RBX
+    cmp RBX, -128
+    jl error_overflow
+
+done:
+    mov RAX, RBX
+    STACKFREE
+    ret 8 * 2
+
+error_overflow:
+    mov R10, 1
+    STACKFREE
+    ret 8 * 2
 
 error:
     mov R10, 1
     STACKFREE
-    ret
-
-stop:
-    neg RBX
-
-scanningcomplete:
-    mov R10, 0
-    mov RAX, RBX
-    STACKFREE
     ret 8 * 2
+
 InputProc endp
 
 ; Процедура вывода числа
 OutputNum proc uses RAX RCX RDX R8 R9 R10 R11, number: qword
     STACKALLOC 1
 
-    xor R8, R8
+    xor R8, R8 ; Счётчик символов
     mov RAX, number
-    cmp number, 0
+    cmp RAX, 0
     jge pos
 
 negate:
-    lea RDX, numberStr ; Загрузка адреса numberStr в 64-битный регистр RDX
-    mov byte ptr [RDX + R8], '-' ; Доступ через 64-битный регистр
+    lea RDX, numberStr
+    mov byte ptr [RDX + R8], '-'
     inc R8
+    neg RAX ; Делаем положительным
 
 pos:
     mov RBX, 10
-    xor RCX, RCX
+    xor RCX, RCX ; Количество цифр
 
 read:
     xor RDX, RDX
-    div RBX
-    add RDX, '0'
+    cqo ; Знаковое расширение
+    idiv RBX ; Деление с учётом знака
+    add RDX, '0' ; Цифра -> символ
     push RDX
-    inc RCX
+    inc RCX ; Счётчик
     cmp RAX, 0
     jne read
 
+    ; Обработка нуля
+    cmp RCX, 0
+    je zero_case
+
 write:
     pop RDX
-    lea RAX, numberStr ; Загрузка адреса numberStr в 64-битный регистр RAX
-    mov byte ptr [RAX + R8], DL ; Доступ через 64-битный регистр
+    lea RAX, numberStr
+    mov byte ptr [RAX + R8], DL
     inc R8
     loop write
+    jmp done
 
-    lea RAX, numberStr ; Загрузка адреса numberStr в 64-битный регистр RAX
-    mov byte ptr [RAX + R8], 0 ; Добавляем нуль-терминатор
-    lea RAX, numberStr ; Загрузка адреса numberStr в 64-битный регистр RAX
+zero_case:
+    mov byte ptr [numberStr], '0'
+    inc R8
+
+done:
+    lea RAX, numberStr
+    mov byte ptr [RAX + R8], 0 ; Нуль-терминатор
+    lea RAX, numberStr
     push RAX
     call OutputProc
+
     STACKFREE
     ret 8
 OutputNum endp

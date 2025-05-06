@@ -1,3 +1,2 @@
-﻿  Assembling 1.asm...
-1.asm(61): warning A6001: no return from procedure
+﻿  LINK : не найден или не выполнена сборка C:\Users\user\Desktop\Machine-Dependent-Programming-Languages\Код для лаб\7_lab\x64\Debug\7_lab.exe при последней инкрементной компоновке; выполняется полная компоновка
   7_lab.vcxproj -> C:\Users\user\Desktop\Machine-Dependent-Programming-Languages\Код для лаб\7_lab\x64\Debug\7_lab.exe
